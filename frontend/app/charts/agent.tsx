@@ -5,6 +5,7 @@ import {
 } from "@/utils/server";
 import { Filter, Order } from "./schema";
 import { Client } from "@langchain/langgraph-sdk";
+import { RemoteRunnable } from "@langchain/core/runnables/remote";
 import { RunnableLambda } from "@langchain/core/runnables";
 import { StreamEvent } from "@langchain/core/tracers/log_stream";
 import {
@@ -29,6 +30,9 @@ import {
   PieChartProps,
 } from "@/lib/mui";
 import { LAMBDA_STREAM_WRAPPER_NAME } from "@/utils/server";
+import { unknown } from "zod";
+
+const API_URL = "http://localhost:8000/charts/";
 
 type FilterGraphInput = {
   input: string;
@@ -176,8 +180,11 @@ function handleDisplayFormat(
 
 async function filterGraph(inputs: FilterGraphInput) {
   "use server";
+  const remoteRunnable = new RemoteRunnable({
+    url: API_URL,
+  })
 
-  const client = new Client({
+  /*const client = new Client({
     apiUrl: process.env.LANGGRAPH_CLOUD_API_URL,
     defaultHeaders: {
       "X-API-KEY": process.env.LANGGRAPH_CLOUD_API_KEY,
@@ -187,21 +194,21 @@ async function filterGraph(inputs: FilterGraphInput) {
     metadata: null,
     offset: 0,
     limit: 1,
-  });
+  });*/
   // We don't do any persisting, so we can just grab the first assistant
-  const agent = assistants[0];
+  //const agent = assistants[0];
 
   const streamEventsRunnable = RunnableLambda.from(async function* (
     input: FilterGraphRunnableInput,
   ) {
-    const streamResponse = client.runs.stream(null, agent.assistant_id, {
-      streamMode: "events",
-      input,
+    const streamResponse = remoteRunnable.streamEvents(input,{version:'v2'
     });
     for await (const event of streamResponse) {
-      yield event.data;
+      yield event;
     }
   }).withConfig({ runName: LAMBDA_STREAM_WRAPPER_NAME });
+
+  //const streamEventsRunnable = await remoteRunnable.stream(null);
 
   let displayFormat = "";
   let chartType: ChartType;
@@ -210,10 +217,13 @@ async function filterGraph(inputs: FilterGraphInput) {
     fields: EventHandlerFields,
   ) => {
     const langGraphEvent: StreamEvent = streamEvent.data.chunk;
+    
     if (!langGraphEvent) {
       return;
     }
+    
     const { event, name, data } = langGraphEvent;
+    console.log("lge",langGraphEvent)
     if (event !== "on_chain_end") {
       return;
     }
